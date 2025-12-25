@@ -1,4 +1,6 @@
 import nltk
+from cs336_data.extract_data import extract_texts_from_warc
+import random
 
 def run_gopher_quality_filter(text: str) -> bool:
     words = nltk.word_tokenize(text)
@@ -21,3 +23,21 @@ def run_gopher_quality_filter(text: str) -> bool:
         return False
 
     return True
+
+if __name__ == "__main__":
+
+    warc_path = "CC-MAIN-20241201162023-20241201192023-00000.warc"
+    texts = []
+    texts = extract_texts_from_warc(warc_path)
+    for i in range(10):
+        print(f"{'='*60}")
+        print(f"Document {i+1}")
+        text = texts[i]
+        if len(text) < 500:
+            continue
+        else:
+            text_range = random.randint(0, len(text)-500)
+            text = text[text_range:min(len(text), text_range+500)]
+        print(text)
+        is_high_quality = run_gopher_quality_filter(text)
+        print(f"\nGopher Quality Filter: {'High Quality' if is_high_quality else 'Low Quality'}")
