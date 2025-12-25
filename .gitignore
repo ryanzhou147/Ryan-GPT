@@ -9,6 +9,9 @@ data/
 *.paths.gz
 *.warc
 *.wet
+*.txt.gz
+quality_train.txt
+sampled_wiki_urls.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
