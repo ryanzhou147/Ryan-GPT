@@ -33,7 +33,6 @@ def run_classify_toxic_speech(text: str) -> tuple[Any, float]:
     from cs336_data.harmful_content import classify_hatespeech
     return classify_hatespeech(text)
 
-
 def run_classify_quality(text: str) -> tuple[Any, float]:
     model_path = "quality_classifier.bin"
     from cs336_data.quality_classifier import classify_string
@@ -49,7 +48,11 @@ def run_gopher_quality_filter(text: str) -> bool:
 def run_exact_line_deduplication(
     input_files: list[os.PathLike], output_directory: os.PathLike
 ):
-    raise NotImplementedError
+    from cs336_data.deduplication import run_exact_line_deduplication
+    return run_exact_line_deduplication(
+        input_files=input_files,
+        output_dir=output_directory,
+    )
 
 
 def run_minhash_deduplication(
