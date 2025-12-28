@@ -10,7 +10,7 @@ from ryan_gpt_basics.transformer.linear import Linear
 class MultiHeadSelfAttention(nn.Module):
 
     def __init__(self, d_model: int, num_heads: int, rope_theta: float | None = None, max_seq_len: int | None = None, with_rope: bool = False,
-                 device=None, dtype=None) -> None:
+                 device=None, dtype=None, use_flash: bool = True) -> None:
 
         super().__init__()
         self.d_model = d_model
@@ -32,6 +32,18 @@ class MultiHeadSelfAttention(nn.Module):
         init.trunc_normal_(self.w_o, mean=0.0, std=std, a=-3*std, b=3*std)
 
         self.with_rope = with_rope
+        self.use_flash = use_flash
+
+        # Try to import explicit flash-attention functions from ryan_gpt_systems
+        try:
+            from ryan_gpt_systems.flash_attention import flash_attention_triton, flash_attention_pytorch
+            self._flash_available = True
+            self._flash_triton = flash_attention_triton
+            self._flash_pytorch = flash_attention_pytorch
+        except Exception:
+            self._flash_available = False
+            self._flash_triton = None
+            self._flash_pytorch = None
 
         if self.with_rope:
             self.rope = RotaryPositionalEmbedding(theta=rope_theta, d_k=self.d_k, max_seq_len=max_seq_len, device=device)
@@ -95,7 +107,39 @@ class MultiHeadSelfAttention(nn.Module):
             causal_mask = torch.tril(torch.ones((1, 1, seq_len, seq_len), device=x.device, dtype=torch.bool))
 
         # Attention: (batch, num_heads, seq_len, d_k) -> (batch, num_heads, seq_len, d_v)
-        attn_output = scaled_dot_product_attention(Q, K, V, causal_mask)
+        # Prefer direct flash-attention call when available and requested (works on 4D Q/K/V)
+        attn_output = None
+        if self.use_flash and self._flash_available:
+            # detect simple causal mask
+            is_causal = False
+            if causal_mask is not None:
+                try:
+                    if causal_mask.shape[-2:] == (seq_len, seq_len):
+                        tril = torch.tril(torch.ones((seq_len, seq_len), device=causal_mask.device, dtype=causal_mask.dtype))
+                        mask_slice = causal_mask.reshape(-1, seq_len, seq_len)[0]
+                        if torch.equal(mask_slice.to(tril.dtype), tril):
+                            is_causal = True
+                except Exception:
+                    is_causal = False
+
+            try:
+                b, h, s, d = Q.shape
+                Q_flat = Q.reshape(b * h, s, d)
+                K_flat = K.reshape(b * h, s, d)
+                V_flat = V.reshape(b * h, s, d)
+                # Prefer PyTorch flash implementation if present, fall back to Triton
+                if self._flash_pytorch is not None:
+                    out_flat = self._flash_pytorch(Q_flat, K_flat, V_flat, is_causal)
+                elif self._flash_triton is not None:
+                    out_flat = self._flash_triton(Q_flat, K_flat, V_flat, is_causal)
+                else:
+                    out_flat = None
+                attn_output = out_flat.reshape(b, h, s, d)
+            except Exception:
+                attn_output = None
+
+        if attn_output is None:
+            attn_output = scaled_dot_product_attention(Q, K, V, causal_mask)
 
         # Concatenate heads using rearrange
         # (batch, num_heads, seq_len, d_v) -> (batch, seq_len, num_heads * d_v)
