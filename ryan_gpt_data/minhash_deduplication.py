@@ -1,24 +1,3 @@
-# Problem (minhash_deduplication): 8 points
-# Write a function that takes a list of paths to input files and performs fuzzy document deduplication
-# with minhash and LSH. In particular, your function should compute minhash signatures for each
-# document in the provided list of paths, use LSH with the provided number of bands to identify candidate
-# duplicates, and then compute the true ngram Jaccard similarity between candidate duplicates and
-# remove those that exceed a given threshold. To improve recall (following Penedo et al., 2023), normalize
-# the text before computing minhash signatures and/or comparing Jaccard similarity by lowercasing,
-# removing punctuation, normalizing whitespaces, and removing accents, and applying NFD unicode
-# normalization.
-# Deliverable: A function that performs fuzzy document deduplication. Your function should take
-# at least the following arguments: (a) a list of paths to its input files, (b) the number of hashes to use
-# for computing minhash signatures, (c) the number of bands to use for LSH, (d) the n-gram length
-# (in words) for computing minhash signatures, and (e) an output directory. You may assume that the
-# number of hashes to use for computing minhash signatures is evenly divisible by the number of bands
-# to use for LSH.
-# Your function should rewrite each input file to the output directory with the same name, but
-# only writing documents that are either (a) not candidate duplicates and/or (b) are randomly selected to be retained from the clustered buckets. For example, if the input paths are a/1.txt and
-# a/2.txt, and the output directory is b/, your function should write the files b/1.txt and b/2.txt.
-# Implement the adapter [run_minhash_deduplication] and make sure it passes uv run pytest -k
-# test_minhash_deduplication.
-
 import os
 import hashlib
 from typing import List

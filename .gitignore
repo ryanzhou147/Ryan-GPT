@@ -4,6 +4,7 @@ CC-MAIN-2023-50/
 nav
 tags
 data/
+.venv_editable_backups/
 
 *.warc.gz
 *.paths.gz
