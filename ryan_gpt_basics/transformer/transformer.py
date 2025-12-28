@@ -10,7 +10,7 @@ class TransformerLM(nn.Module):
 
     def __init__(self, vocab_size: int, context_length: int, num_layers: int, d_model: int, num_heads: int, d_ff: int, with_rope: bool = False,
                  rope_theta: float | None = None, max_seq_len: int | None = None,
-                 device=None, dtype=None) -> None:
+                 device=None, dtype=None, use_flash: bool = True) -> None:
         super().__init__()
 
         self.vocab_size = vocab_size
@@ -23,7 +23,7 @@ class TransformerLM(nn.Module):
 
         self.token_embeddings = Embedding(vocab_size, d_model)
         self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(d_model, num_heads, d_ff, with_rope, rope_theta, max_seq_len, device, dtype)
+            TransformerBlock(d_model, num_heads, d_ff, with_rope, rope_theta, max_seq_len, device, dtype, use_flash=use_flash)
             for _ in range(num_layers)
         ])
         self.rmsnorm_final = RMSNorm(d_model, device=device, dtype=dtype)
