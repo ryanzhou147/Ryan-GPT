@@ -1,6 +1,4 @@
-import bz2
-import xml.etree.ElementTree as ET
-import re
+import regex as re
 import os
 import sys
 import json
@@ -8,111 +6,104 @@ import shutil
 import tempfile
 import subprocess
 
-
-def download_wikipedia(output_dir: str = "data/wikipedia", use_simple: bool = True):
+def download_wikipedia(output_dir: str = "data/wikipedia"):
     """Download Wikipedia dump."""
     os.makedirs(output_dir, exist_ok=True)
     
-    if use_simple:
-        url = "https://dumps.wikimedia.org/simplewiki/latest/simplewiki-latest-pages-articles.xml.bz2"
-        output_path = f"{output_dir}/simplewiki-latest.xml.bz2"
-    else:
-        url = "https://dumps.wikimedia.org/enwiki/latest/enwiki-latest-pages-articles.xml.bz2"
-        output_path = f"{output_dir}/enwiki-latest.xml.bz2"
-    
+    url = "https://dumps.wikimedia.org/simplewiki/latest/simplewiki-latest-pages-articles.xml.bz2"
+    output_path = f"{output_dir}/simplewiki-latest.xml.bz2"
+
     if not os.path.exists(output_path):
         print(f"Downloading Wikipedia dump from {url}...")
         subprocess.run(["wget", "-c", "-O", output_path, url], check=True)
     
     return output_path
 
+RE_REF = re.compile(r'<ref[^>]*>.*?</ref>', flags=re.DOTALL)
+RE_REF_SELF = re.compile(r'<ref[^/]*?/>')
+RE_TEMPLATE = re.compile(r'\{\{[^}]+\}\}')
+RE_CATEGORY = re.compile(r'\[\[Category:[^\]]+\]\]')
+RE_LINK_PIPE = re.compile(r'\[\[[^|\]]+\|([^\]]+)\]\]')
+RE_LINK = re.compile(r'\[\[([^\]]+)\]\]')
+RE_EXTLINK = re.compile(r'\[https?://[^\]]+\]')
+RE_HTML = re.compile(r'<[^>]+>')
+RE_BOLD = re.compile(r"'{2,}")
+RE_HEADING = re.compile(r'={2,}([^=]+)={2,}')
+RE_NEWLINES = re.compile(r'\n{3,}')
+RE_SPACES = re.compile(r' +')
+
+RE_SECTION_HEADER = re.compile(r'^[A-Z][a-z]+\.\s*$', flags=re.MULTILINE)
+RE_NUMBERED = re.compile(r'^\d+\)\s*', flags=re.MULTILINE)
+RE_CHINESE = re.compile(r'\([^)]*[\u4e00-\u9fff][^)]*\)')
+RE_CYRILLIC = re.compile(r'\([^)]*[\u0400-\u04FF][^)]*\)')
+RE_PINYIN = re.compile(r'\(pinyin:[^)]+\)', flags=re.IGNORECASE)
+RE_MULTI_SPACE = re.compile(r'  +')
 
 def clean_wikitext(text: str) -> str:
     """Clean Wikipedia markup."""
-    
-    # Remove references
-    text = re.sub(r'<ref[^>]*>.*?</ref>', '', text, flags=re.DOTALL)
-    text = re.sub(r'<ref[^/]*?/>', '', text)
-    
-    # Remove templates {{...}}
-    text = re.sub(r'\{\{[^}]+\}\}', '', text)
-    
-    # Remove categories [[Category:...]]
-    text = re.sub(r'\[\[Category:[^\]]+\]\]', '', text)
-    
-    # Convert links [[link|text]] to text
-    text = re.sub(r'\[\[[^|\]]+\|([^\]]+)\]\]', r'\1', text)
-    text = re.sub(r'\[\[([^\]]+)\]\]', r'\1', text)
-    
-    # Remove external links [http://...]
-    text = re.sub(r'\[https?://[^\]]+\]', '', text)
-    
-    # Remove HTML tags
-    text = re.sub(r'<[^>]+>', '', text)
-    
-    # Remove bold/italic markers
-    text = re.sub(r"'{2,}", '', text)
-    
-    # Remove headings markup
-    text = re.sub(r'={2,}([^=]+)={2,}', r'\1', text)
-    
-    # Clean whitespace
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = re.sub(r' +', ' ', text)
-    
+    text = RE_REF.sub('', text)
+    text = RE_REF_SELF.sub('', text)
+    text = RE_TEMPLATE.sub('', text)
+    text = RE_CATEGORY.sub('', text)
+    text = RE_LINK_PIPE.sub(r'\1', text)
+    text = RE_LINK.sub(r'\1', text)
+    text = RE_EXTLINK.sub('', text)
+    text = RE_HTML.sub('', text)
+    text = RE_BOLD.sub('', text)
+    text = RE_HEADING.sub(r'\1', text)
+    text = RE_NEWLINES.sub('\n\n', text)
+    text = RE_SPACES.sub(' ', text)
     return text.strip()
-
-
-def filter_article(text: str) -> bool:
-    """Return True if article should be kept."""
-    
-    # 1. Minimum word count (skip stubs)
-    if len(text.split()) < 100:
-        return False
-    
-    # 2. Skip list-heavy articles (more than 50% bullet lines)
-    lines = text.strip().split('\n')
-    bullet_lines = sum(1 for line in lines if line.strip().startswith(('*', '-', '#')))
-    if bullet_lines / max(len(lines), 1) > 0.5:
-        return False
-    
-    # 3. Skip if too many section markers (little real content)
-    if text.count('Related pages') + text.count('References') > 2:
-        return False
-    
-    return True
 
 
 def clean_article(text: str) -> str:
     """Extra cleaning after initial clean_wikitext."""
     
-    # Remove "Related pages" section and everything after
     for marker in ['Related pages', 'References', 'Other websites', 'Notes', 'Sources']:
         if marker in text:
             text = text.split(marker)[0]
     
-    # Remove section headers (keep just the content)
-    text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+    text = RE_SECTION_HEADER.sub('', text)
+    text = RE_NUMBERED.sub('', text)
+    text = RE_CHINESE.sub('', text)
+    text = RE_CYRILLIC.sub('', text)
+    text = RE_PINYIN.sub('', text)
+    text = RE_NEWLINES.sub('\n\n', text)
+    text = RE_MULTI_SPACE.sub(' ', text)
     
-    # Remove numbered list formatting but keep content
-    text = re.sub(r'^\d+\)\s*', '', text, flags=re.MULTILINE)
+    return text.strip()
+
+def filter_article(text: str) -> bool:
+    """Return True if article should be kept."""
     
-    # Clean up extra whitespace
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = text.strip()
+    words = text.split()
+    if len(words) < 100:
+        return False
     
-    return text
+    lines = text.strip().split('\n')
+    bullet_lines = sum(1 for line in lines if line.strip().startswith(('*', '-', '#')))
+    if bullet_lines / max(len(lines), 1) > 0.5:
+        return False
+    
+    # Faster ASCII check using encode
+    try:
+        ascii_ratio = len(text.encode('ascii', errors='ignore')) / max(len(text), 1)
+        if ascii_ratio < 0.8:
+            return False
+    except:
+        return False
+    
+    return True
 
 
 def extract_wikipedia(
     dump_path: str,
     output_path: str = "data/wikipedia/wiki_text.txt",
     max_articles: int = None,
-    min_length: int = 300,
-    use_gopher_filter: bool = False,
+    min_length: int = 200,
     use_article_filter: bool = True,
-    use_wikiextractor: bool = False,
-    processes: int = 4,
+    use_wikiextractor: bool = True,
+    processes: int = 10,
 ):
     """Extract and clean text from Wikipedia dump."""
     
@@ -146,21 +137,10 @@ def extract_wikipedia(
             skipped_count += 1
             return False
         
-        # Gopher filter (optional)
-        if use_gopher_filter:
-            try:
-                from ryan_gpt_data.gopher_filter import run_gopher_quality_filter
-            except Exception:
-                run_gopher_quality_filter = None
-            
-            if run_gopher_quality_filter is not None and not run_gopher_quality_filter(cleaned):
-                skipped_count += 1
-                return False
-        
         # Write article
-        f_out.write(f"{title}\n\n")
+        f_out.write(f"{title}")
         f_out.write(cleaned)
-        f_out.write("\n\n---\n\n")
+        f_out.write("\n<|endoftext|>\n")  
         
         article_count += 1
         
@@ -187,12 +167,10 @@ def extract_wikipedia(
                 print('WikiExtractor failed, falling back to XML parser:', e)
                 shutil.rmtree(tempdir, ignore_errors=True)
                 wikiex_failed = True
-            
             if not wikiex_failed:
-                # Walk the output directory and read JSON lines
                 with open(output_path, 'w', encoding='utf-8') as f_out:
                     for root, _, files in os.walk(tempdir):
-                        for fname in files:
+                        for fname in sorted(files):  # sorted for deterministic order
                             fpath = os.path.join(root, fname)
                             with open(fpath, 'r', encoding='utf-8') as fh:
                                 for line in fh:
@@ -218,47 +196,12 @@ def extract_wikipedia(
                 shutil.rmtree(tempdir)
             except Exception:
                 pass
-        
-        if wikiex_failed:
-            # Reset counts and fall through to XML parser
-            article_count = 0
-            skipped_count = 0
-    
-    # Fallback: original streaming XML parser (single-threaded)
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    with bz2.open(dump_path, 'rt', encoding='utf-8') as f_in, \
-         open(output_path, 'w', encoding='utf-8') as f_out:
-        
-        context = ET.iterparse(f_in, events=('end',))
-        
-        for event, elem in context:
-            if elem.tag == f"{NS}page":
-                
-                title_elem = elem.find(f"{NS}title")
-                text_elem = elem.find(f".//{NS}text")
-                
-                if title_elem is not None and text_elem is not None and text_elem.text:
-                    title = title_elem.text
-                    text = text_elem.text
-                    
-                    process_article(title, text, f_out)
-                    
-                    if max_articles and article_count >= max_articles:
-                        break
-                
-                elem.clear()
-    
-    print(f"Extracted {article_count} articles (skipped {skipped_count}) to {output_path}")
-    return output_path
-
 
 if __name__ == "__main__":
-    dump_path = download_wikipedia(use_simple=True)
+    dump_path = download_wikipedia()
     extract_wikipedia(
         dump_path,
         max_articles=20000,
-        min_length=300,
+        min_length=200,
         use_article_filter=True,
-        use_gopher_filter=False,
     )
