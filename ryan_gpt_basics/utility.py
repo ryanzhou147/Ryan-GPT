@@ -16,15 +16,19 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
 def scaled_dot_product_attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, mask: torch.Tensor):
     assert value.size(-2) == key.size(-2), "Key and Value must have the same sequence length"
 
-    # Fast-path: use Triton-based FlashAttention from ryan_gpt_systems when available.
+    # Fast-path: use flash-attention functions from ryan_gpt_systems when available.
     try:
-        from ryan_gpt_systems.flash_attention import FlashAttentionFunctionTriton
-        triton_available = True
+        from ryan_gpt_systems.flash_attention import flash_attention_triton, flash_attention_pytorch
+        flash_available = True
+        _flash_triton = flash_attention_triton
+        _flash_pytorch = flash_attention_pytorch
     except Exception:
-        triton_available = False
+        flash_available = False
+        _flash_triton = None
+        _flash_pytorch = None
 
     # If inputs include head dimension (batch, heads, seq, d), reshape and use flash attention
-    if triton_available and query.ndim == 4:
+    if flash_available and query.ndim == 4:
         b, h, s, d = query.shape
         # detect simple causal mask pattern
         is_causal = False
@@ -43,9 +47,17 @@ def scaled_dot_product_attention(query: torch.Tensor, key: torch.Tensor, value: 
             Q = query.reshape(b * h, s, d)
             K = key.reshape(b * h, s, d)
             V = value.reshape(b * h, s, d)
-            out_flat = FlashAttentionFunctionTriton.apply(Q, K, V, is_causal)
-            out = out_flat.reshape(b, h, s, d)
-            return out
+            # Prefer PyTorch flash implementation first
+            if _flash_pytorch is not None:
+                out_flat = _flash_pytorch(Q, K, V, is_causal)
+            elif _flash_triton is not None:
+                out_flat = _flash_triton(Q, K, V, is_causal)
+            else:
+                out_flat = None
+
+            if out_flat is not None:
+                out = out_flat.reshape(b, h, s, d)
+                return out
         except Exception:
             # If flash path fails, fall back to Python implementation below
             pass
