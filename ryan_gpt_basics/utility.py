@@ -14,14 +14,49 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
     return x_exp / x_exp_sum
 
 def scaled_dot_product_attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, mask: torch.Tensor):
-    assert mask.max() <= 1 and mask.min() >= 0, "Mask tensor must be binary (0s and 1s)"
     assert value.size(-2) == key.size(-2), "Key and Value must have the same sequence length"
+
+    # Fast-path: use Triton-based FlashAttention from ryan_gpt_systems when available.
+    try:
+        from ryan_gpt_systems.flash_attention import FlashAttentionFunctionTriton
+        triton_available = True
+    except Exception:
+        triton_available = False
+
+    # If inputs include head dimension (batch, heads, seq, d), reshape and use flash attention
+    if triton_available and query.ndim == 4:
+        b, h, s, d = query.shape
+        # detect simple causal mask pattern
+        is_causal = False
+        if mask is not None and mask.ndim >= 2:
+            try:
+                if mask.shape[-2:] == (s, s):
+                    tril = torch.tril(torch.ones((s, s), device=mask.device, dtype=mask.dtype))
+                    # compare first batch/head mask slice if possible
+                    mask_slice = mask.reshape(-1, s, s)[0]
+                    if torch.equal(mask_slice.to(tril.dtype), tril):
+                        is_causal = True
+            except Exception:
+                is_causal = False
+
+        try:
+            Q = query.reshape(b * h, s, d)
+            K = key.reshape(b * h, s, d)
+            V = value.reshape(b * h, s, d)
+            out_flat = FlashAttentionFunctionTriton.apply(Q, K, V, is_causal)
+            out = out_flat.reshape(b, h, s, d)
+            return out
+        except Exception:
+            # If flash path fails, fall back to Python implementation below
+            pass
+
+    # Fallback generic implementation (works for both with/without head dim)
+    assert mask is None or (mask.max() <= 1 and mask.min() >= 0), "Mask tensor must be binary (0s and 1s)"
     d_k = query.size(-1)
-    scores = einsum(query, key, '... i d, ... j d -> ... i j') / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+    scores = einsum(query, key, '... i d, ... j d -> ... i j') / torch.sqrt(torch.tensor(d_k, dtype=torch.float32, device=query.device))
     if mask is not None:
         scores = scores.masked_fill(mask == 0, float('-inf'))
     attn_weights = softmax(scores, dim=-1)
-    
     outputs = einsum(attn_weights, value, '... i j, ... j d -> ... i d')
     return outputs
 
