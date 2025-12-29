@@ -109,17 +109,6 @@ def data_loading(x: np.ndarray, batch_size: int, context_length: int, device: st
     
     return seq[:, :-1], seq[:, 1:]
 
-# What if the dataset is too big to load into memory? We can use a Unix systemcall named mmap which
-# maps a file on disk to virtual memory, and lazily loads the file contents when that memory location is
-# accessed. Thus, you can “pretend” you have the entire dataset in memory. Numpy implements this through
-# np.memmap (or the flag mmap_mode='r' to np.load, if you originally saved the array with np.save), which
-# will return a numpy array-like object that loads the entries on-demand as you access them. When sampling
-# from your dataset (i.e., a numpy array) during training, be sure load the dataset in memorymapped mode (via np.memmap or the flag mmap_mode='r' to np.load, depending on how you saved the
-# array). Make sure you also specify a dtype that matches the array that you’re loading. It may be helpful
-# to explicitly verify that the memory-mapped data looks correct (e.g., doesn’t contain values beyond the
-# expected vocabulary size).
-
-
 def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, 
                     iteration: int, out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes]) -> int:
     checkpoint = {
@@ -147,6 +136,7 @@ def decode(
     eos_token_id: int | None = None,
     temperature: float = 1.0,
     top_p: float | None = None,
+    banned_token_ids: list[int] | torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Decode text from a language model.
@@ -178,7 +168,20 @@ def decode(
         # Temperature scaling
         if temperature != 1.0:
             logits = logits / temperature
-        
+
+        # Mask any banned tokens by setting their logits very low
+        if banned_token_ids is not None:
+            try:
+                if isinstance(banned_token_ids, torch.Tensor):
+                    banned = banned_token_ids.to(logits.device)
+                else:
+                    banned = torch.tensor(banned_token_ids, device=logits.device, dtype=torch.long)
+                # scatter to set logits[:, banned] = -1e9
+                logits.scatter_(1, banned.unsqueeze(0).expand(logits.size(0), -1), -1e9)
+            except Exception:
+                for bid in (banned_token_ids if not isinstance(banned_token_ids, torch.Tensor) else banned_token_ids.tolist()):
+                    logits[:, bid] = -1e9
+
         # Convert to probabilities
         probs = softmax(logits, dim=-1)
         

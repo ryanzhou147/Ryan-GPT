@@ -38,8 +38,8 @@ def main():
     checkpoint_path = args.checkpoint or preset["checkpoint"]
     prompt = args.prompt or preset["prompt"]
 
-    # Load tokenizer
-    tokenizer = BPEProcessor.from_files(preset["vocab"], preset["merges"], ["<|endoftext|>"])
+    # Load tokenizer (include common special tokens used in dialogue)
+    tokenizer = BPEProcessor.from_files(preset["vocab"], preset["merges"], ["<|endoftext|>", "<|user|>", "<|assistant|>"])
 
     # Load model checkpoint first and infer architecture when possible
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -118,12 +118,33 @@ def main():
     model.load_state_dict(state_dict, strict=False)
     model.eval()
 
-    eos_id = tokenizer.vocab.get(b"<|endoftext|>")
+    eos_id = None
+    if hasattr(tokenizer, 'special_tokens_to_id'):
+        eos_id = tokenizer.special_tokens_to_id.get(b"<|endoftext|>")
+    else:
+        eos_id = tokenizer.vocab.get(b"<|endoftext|>")
+    if eos_id is None:
+        print("Warning: <|endoftext|> not found in tokenizer")
     prompt_ids = torch.tensor(tokenizer.encode(prompt), dtype=torch.long, device=device)
 
     print(f"\nPrompt: {prompt}")
     print(f"Temperature: {args.temperature}, Top-p: {args.top_p}")
     print("-" * 60)
+
+    # Build banned token list: mask special markers during generation
+    banned_tokens = []
+    specials = [b"<|endoftext|>", b"<|user|>", b"<|assistant|>"]
+    if hasattr(tokenizer, 'special_tokens_to_id'):
+        for t in specials:
+            tid = tokenizer.special_tokens_to_id.get(t)
+            if tid is not None:
+                banned_tokens.append(tid)
+    else:
+        for t in specials:
+            tid = tokenizer.vocab.get(t)
+            if tid is not None:
+                banned_tokens.append(tid)
+    # debug: print(f"Banned token ids: {banned_tokens}")
 
     generated_ids = generate(
         model,
@@ -133,6 +154,7 @@ def main():
         eos_token_id=eos_id,
         temperature=args.temperature,
         top_p=args.top_p,
+        banned_token_ids=banned_tokens if banned_tokens else None,
     )
 
     text = tokenizer.decode(generated_ids.tolist())
