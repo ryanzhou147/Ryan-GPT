@@ -21,8 +21,13 @@ PRESETS = {
         "checkpoint": "data/owt/main_experiment/checkpoints/checkpoint_final.pt",
         "prompt": "The scientists discovered that",
     },
+    "chat": {
+        "vocab": "data/tokenized/vocab.json",
+        "merges": "data/tokenized/merges.txt",
+        "checkpoint": "runs/finetune/checkpoints/ckpt_final.pt",
+        "prompt": "<|user|>\nHello, how are you?\n<|assistant|>\n",
+    },
 }
-
 
 def main():
     parser = argparse.ArgumentParser(description="Generate text from GPT")
