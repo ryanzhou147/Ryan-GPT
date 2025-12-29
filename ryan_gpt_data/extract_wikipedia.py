@@ -78,7 +78,7 @@ def filter_article(text: str) -> bool:
     """Return True if article should be kept."""
     
     words = text.split()
-    if len(words) < 100:
+    if len(words) < 50:
         return False
     
     lines = text.strip().split('\n')
