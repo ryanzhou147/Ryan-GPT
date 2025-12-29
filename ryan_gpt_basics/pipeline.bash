@@ -81,7 +81,7 @@ PYTHONPATH=. python ryan_gpt_basics/train.py finetune \
 echo "=========================================="
 echo "STEP 7: Chat Test"
 echo "=========================================="
-PYTHONPATH=. python ryan_gpt_basics/train.py chat \
+PYTHONPATH=. python ryan_gpt_basics/generate.py chat \
     --checkpoint runs/finetune/checkpoints/ckpt_final.pt \
     --tokenizer_dir data/tokenized \
     --vocab_size 10000 \
