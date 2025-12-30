@@ -154,17 +154,38 @@ def train(args):
         weight_decay=args.weight_decay,
     )
 
+    # Resume handling
     start_iter = 0
+    lr_config = None
+    
     if args.resume:
-        start_iter = load_checkpoint(args.resume, model, optimizer)
+        start_iter, lr_config = load_checkpoint(args.resume, model, optimizer)
         print(f"Resumed from iter {start_iter}")
+        if lr_config:
+            print(f"Restored LR config: max_lr={lr_config['max_lr']:.2e}, min_lr={lr_config['min_lr']:.2e}, max_steps={lr_config['max_steps']}")
+    
+    # Use saved LR config if resuming, otherwise use defaults
+    if lr_config is None:
+        lr_config = {
+            'max_lr': 6e-4,
+            'min_lr': 6e-5,
+            'warmup_steps': 1500,
+            'max_steps': 40000,
+        }
+        print(f"No lr_config in checkpoint, using defaults")
 
     # Train
     model.train()
     loss_fn = CrossEntropyLoss()
     
     for step in range(start_iter, args.max_steps + 1):
-        lr = learning_rate_schedule(step, args.lr, args.min_lr, args.warmup_steps, args.max_steps)
+        lr = learning_rate_schedule(
+            step, 
+            lr_config['max_lr'], 
+            lr_config['min_lr'], 
+            lr_config['warmup_steps'], 
+            lr_config['max_steps']
+        )
         for pg in optimizer.param_groups:
             pg['lr'] = lr
 
@@ -178,7 +199,7 @@ def train(args):
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
                 logits = model(x)
                 loss = loss_fn.forward(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
-                loss = loss / grad_accum  # Scale loss for accumulation
+                loss = loss / grad_accum
             
             loss.backward()
             accum_loss += loss.item()
@@ -217,9 +238,9 @@ def train(args):
             print(msg)
 
         if step > 0 and step % args.save_interval == 0:
-            save_checkpoint(model, optimizer, step, ckpt_dir / f"ckpt_{step}.pt")
+            save_checkpoint(model, optimizer, step, ckpt_dir / f"ckpt_{step}.pt", lr_config)
 
-    save_checkpoint(model, optimizer, args.max_steps, ckpt_dir / "ckpt_final.pt")
+    save_checkpoint(model, optimizer, args.max_steps, ckpt_dir / "ckpt_final.pt", lr_config)
     logger.finish()
     print("Pretraining done.")
 

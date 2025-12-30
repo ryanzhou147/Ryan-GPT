@@ -110,21 +110,24 @@ def data_loading(x: np.ndarray, batch_size: int, context_length: int, device: st
     return seq[:, :-1], seq[:, 1:]
 
 def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, 
-                    iteration: int, out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes]) -> int:
+                    iteration: int, out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+                    lr_config: dict = None) -> None:
     checkpoint = {
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'iteration': iteration
+        'iteration': iteration,
+        'lr_config': lr_config,
     }
     torch.save(checkpoint, out)
 
 def load_checkpoint(src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
-                    model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> None:
+                    model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> tuple[int, dict]:
     
     checkpoint = torch.load(src)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    return checkpoint['iteration']
+    lr_config = checkpoint.get('lr_config', None)
+    return checkpoint['iteration'], lr_config
 
 
 @torch.no_grad()
