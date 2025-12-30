@@ -3,7 +3,7 @@ set -e
 cd ~/Downloads/ryan-gpt
 
 echo "=========================================="
-echo "STEP 1: Pretrain (~3-4 hours)"
+echo "STEP 1: Pretrain (~8-10 hours)"
 echo "=========================================="
 PYTHONPATH=. python ryan_gpt_basics/train.py train \
     --train_data data/tokenized/all_text.npy \
@@ -16,10 +16,10 @@ PYTHONPATH=. python ryan_gpt_basics/train.py train \
     --d_ff 1280 \
     --batch_size 32 \
     --gradient_accumulation_steps 2 \
-    --max_steps 50000 \
+    --max_steps 80000 \
     --lr 6e-4 \
     --min_lr 6e-5 \
-    --warmup_steps 1000 \
+    --warmup_steps 2000 \
     --log_interval 100 \
     --save_interval 5000
 
@@ -39,18 +39,19 @@ PYTHONPATH=. python ryan_gpt_basics/train.py finetune \
     --d_ff 1280 \
     --batch_size 32 \
     --gradient_accumulation_steps 2 \
-    --max_steps 2000 \
+    --max_steps 500 \
     --lr 3e-5 \
     --min_lr 3e-6 \
-    --warmup_steps 100 \
+    --warmup_steps 50 \
     --log_interval 50 \
-    --save_interval 500
+    --save_interval 250 \
+    --eval_interval 100
 
 echo "=========================================="
 echo "STEP 3: Chat"
 echo "=========================================="
 PYTHONPATH=. python ryan_gpt_basics/chat.py \
-    --checkpoint runs/finetune_chinchilla_style/checkpoints/ckpt_final.pt \
+    --checkpoint runs/finetune_deep/checkpoints/ckpt_final.pt \
     --temperature 0.5
 
 echo "=========================================="
