@@ -8,7 +8,7 @@ from multiprocessing import Pool
 from typing import BinaryIO, Dict
 
 # Default number of worker processes used when splitting files
-NUM_PRETOKENIZING_PROCESSES = 5
+NUM_PRETOKENIZING_PROCESSES = 16
 
 # Module-level globals for workers
 _worker_pat: re.Pattern | None = None
