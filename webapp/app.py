@@ -157,7 +157,7 @@ async def api_chat(req: Request):
 
     kind = 'finetune' if model_type == 'finetune' else 'pretrain'
     try:
-        model, tokenizer, device = get_model_and_tokenizer(kind)
+        model, tokenizer, device = get_model_and_tokenizer(model_type)
         reply = generate_response(
             model, tokenizer, prompt,
             max_tokens=max_tokens, temperature=temperature, device=device,

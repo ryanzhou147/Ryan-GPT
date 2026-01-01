@@ -25,19 +25,29 @@ PRESETS = {
 
 def clean_text(text: str) -> str:
     """Clean generated text by fixing spacing issues."""
-    # Fix contractions with spaces
-    text = re.sub(r"\s*'\s*", "'", text)
-    text = re.sub(r"\s+n't", "n't", text)
+    # Remove any special tokens that leaked through
+    text = text.replace('<|endoftext|>', '')
+    text = text.replace('<|user|>', '')
+    text = text.replace('<|assistant|>', '')
+    
+    # Fix contractions: "I ' m" -> "I'm"
+    text = re.sub(r"(\w)\s+'\s+(\w)", r"\1'\2", text)
     text = re.sub(r"(\w)\s+'(\w)", r"\1'\2", text)
+    text = re.sub(r"(\w)'\s+(\w)", r"\1'\2", text)
     
     # Fix spacing around punctuation
     text = re.sub(r"\s+([.,!?;:])", r"\1", text)
-    text = re.sub(r"\$\s+", "$", text)
     
     # Collapse multiple spaces
     text = re.sub(r"\s+", " ", text)
     
-    return text.strip()
+    text = text.strip()
+    
+    # Ensure response ends with punctuation
+    if text and text[-1] not in '.!?':
+        text += '.'
+    
+    return text
 
 
 def extract_response(text: str) -> str:
@@ -83,11 +93,11 @@ def load_model(checkpoint_path: str, device: str):
     d_model = d_model or 512
     num_layers = num_layers or 4
     d_ff = d_ff or 1536
-    num_heads = 8
+    num_heads = d_model // 64
     
     model = TransformerLM(
         vocab_size=vocab_size,
-        context_length=256,
+        context_length=512,
         num_layers=num_layers,
         d_model=d_model,
         num_heads=num_heads,
@@ -126,7 +136,7 @@ def generate_text(
     generated_ids = decode(
         model, prompt_ids,
         max_new_tokens=max_tokens,
-        context_length=256,
+        context_length=512,
         eos_token_id=eos_id,
         temperature=temperature,
         top_p=top_p,
@@ -141,14 +151,63 @@ def generate_response(
     model,
     tokenizer,
     user_input: str,
-    max_tokens: int = 100,
-    temperature: float = 0.5,
+    max_tokens: int = 150,
+    temperature: float = 0.6,
+    top_p: float = 0.9,
+    min_tokens: int = 10,
     device: str = 'cuda',
 ) -> str:
     """Generate a chat response to user input."""
     prompt = f'<|user|>\n{user_input}\n<|assistant|>\n'
-    text = generate_text(model, tokenizer, prompt, max_tokens, temperature, device=device)
-    return extract_response(text)
+    
+    # Get special token IDs
+    eos_id = tokenizer.encode('<|endoftext|>')[0]
+    user_id = tokenizer.encode('<|user|>')[0]
+    
+    # Encode prompt
+    prompt_ids = torch.tensor(tokenizer.encode(prompt), dtype=torch.long, device=device)
+    
+    generated = []
+    input_ids = prompt_ids.clone()
+    
+    with torch.no_grad():
+        for i in range(max_tokens):
+            logits = model(input_ids.unsqueeze(0))[:, -1, :]
+            
+            # Ban EOS and <|user|> tokens for first min_tokens
+            if i < min_tokens:
+                logits[0, eos_id] = float('-inf')
+                logits[0, user_id] = float('-inf')
+            
+            # Apply temperature
+            logits = logits / temperature
+            
+            # Apply top-p sampling
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+            sorted_indices_to_remove = cumulative_probs > top_p
+            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+            sorted_indices_to_remove[..., 0] = 0
+            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+            logits[indices_to_remove] = float('-inf')
+            
+            # Sample next token
+            probs = torch.softmax(logits, dim=-1)
+            next_id = torch.multinomial(probs, 1).item()
+            
+            # Stop if EOS or <|user|> (after min_tokens)
+            if next_id == eos_id or next_id == user_id:
+                break
+            
+            generated.append(next_id)
+            input_ids = torch.cat([input_ids, torch.tensor([next_id], device=device)])
+            
+            # Truncate context if too long
+            if len(input_ids) > 512:
+                input_ids = input_ids[-512:]
+    
+    response_text = tokenizer.decode(generated)
+    return clean_text(response_text)
 
 
 def main():
