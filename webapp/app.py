@@ -143,9 +143,9 @@ async def api_chat(req: Request):
     model_type = body.get('model', 'finetune')
     prompt = (body.get('prompt') or '').strip()
     try:
-        min_tokens = int(body.get('min_tokens', 10))
+        min_tokens = int(body.get('min_tokens', 5))
     except Exception:
-        min_tokens = 10
+        min_tokens = 5
     try:
         temperature = float(body.get('temperature', 0.5))
     except Exception:
@@ -174,9 +174,9 @@ async def api_chat(req: Request):
     try:
         min_tokens = int(min_tokens)
     except Exception:
-        min_tokens = 10
-    if min_tokens > 999:
-        min_tokens = 999
+        min_tokens = 5
+    if min_tokens > 140:
+        min_tokens = 140
 
     chat_mode = 'finetune' in model_type.lower()
 

@@ -25,10 +25,10 @@
                 </select>
               </label>
               <label class="switch-label">Temp
-                <input v-model.number="temperature" @blur="onTempBlur" type="number" step="0.01" min="0.01" max="0.99" style="width:60px" />
+                <input v-model.number="temperature" @blur="onTempBlur" type="number" step="0.01" min="0.01" max="0.99" style="width:50px" />
               </label>
               <label class="switch-label">Min Tokens
-                <input v-model.number="min_tokens" @blur="onMinTokensBlur" type="number" step="1" min="10" max="140" style="width:60px" />
+                <input v-model.number="min_tokens" @blur="onMinTokensBlur" type="number" step="1" min="10" max="140" style="width:50px" />
               </label>
             </div>
         </header>
@@ -62,7 +62,7 @@
         const prompt = ref('');
         const messages = reactive([]);
         const temperature = ref(0.5);
-        const min_tokens = ref(10);
+        const min_tokens = ref(5);
 
         // clamp on blur handlers (only enforce when user leaves the input)
         function onTempBlur(){
@@ -76,10 +76,9 @@
         }
 
         function onMinTokensBlur(){
-          let val = parseInt(min_tokens.value) || 10;
-          if (val < 10) val = 10;
+          let val = parseInt(min_tokens.value) || 5;
+          if (val < 5) val = 5;
           else if (val > 140) val = 140;
-          if (val > 999) val = 999;
           min_tokens.value = val;
         }
 
@@ -106,8 +105,8 @@
             if (tempVal <= 0.0) tempVal = 0.01;
             if (tempVal >= 1.0) tempVal = 0.99;
 
-            let minT = parseInt(min_tokens.value) || 10;
-            if (minT < 10) minT = 10;
+            let minT = parseInt(min_tokens.value) || 5;
+            if (minT < 5) minT = 5;
             if (minT > 140) minT = 140;
 
             const res = await fetch('/api/chat', {
