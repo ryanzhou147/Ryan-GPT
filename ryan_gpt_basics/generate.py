@@ -22,7 +22,6 @@ PRESETS = {
     },
 }
 
-
 def clean_text(text: str) -> str:
     """Clean generated text by fixing spacing issues."""
     # Remove any special tokens that leaked through
@@ -47,12 +46,18 @@ def clean_text(text: str) -> str:
     
     text = text.strip()
     
+    # Capitalize first letter
+    if text:
+        text = text[0].upper() + text[1:]
+    
+    # Capitalize after periods
+    text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+    
     # Ensure response ends with punctuation
     if text and text[-1] not in '.!?':
         text += '.'
     
     return text
-
 
 def extract_response(text: str) -> str:
     """Extract assistant response from chat-formatted text."""
