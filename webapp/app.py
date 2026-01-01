@@ -1,9 +1,8 @@
-#!/usr/bin/env python3
 from pathlib import Path
 import threading
 import torch
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -35,59 +34,41 @@ _LOCK = threading.Lock()
 
 def get_model_and_tokenizer(kind: str):
     """kind: 'finetune' or 'pretrain'"""
-    # Resolve to a concrete checkpoint path (prefer the newest run for this kind)
-    def find_latest_checkpoint(kind_name: str):
-        runs_dir = Path('runs')
-        if not runs_dir.exists():
-            return None
-        candidates = []
-        for p in runs_dir.glob('**/checkpoints/*.pt'):
-            # prefer checkpoints in runs/ directories that include the kind name
-            if kind_name.lower() in str(p).lower():
-                candidates.append(p)
-        # if none matched by name, fall back to any checkpoint
-        if not candidates:
-            candidates = list(runs_dir.glob('**/checkpoints/*.pt'))
-        if not candidates:
-            return None
-        # pick the most recently modified checkpoint
-        latest = max(candidates, key=lambda x: x.stat().st_mtime)
-        return str(latest)
+    # Map logical kinds to the models directory
+    models_dir = Path('models')
+    mapping = {
+        'finetune': models_dir / 'finetune_dailydialog' / 'ckpt_final.pt',
+        'pretrain': models_dir / 'pretrain_wikipedia' / 'ckpt_final.pt',
+    }
 
-    # If `kind` looks like a direct checkpoint path, use it directly
+    # If `kind` is a direct checkpoint path, prefer that
     p = Path(kind)
     if p.suffix == '.pt' and p.exists():
         resolved_checkpoint = str(p)
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        cache_key = f"checkpoint:{resolved_checkpoint}"
-        if cache_key in _MODEL_CACHE:
-            return _MODEL_CACHE[cache_key]
-        # heuristic: choose tokenizer preset based on run name
-        preset_key = 'chat' if 'finetune' in str(p).lower() else 'wikipedia'
-        preset = PRESETS.get(preset_key, PRESETS.get('wikipedia'))
-        model = load_model(resolved_checkpoint, device)
-        tokenizer = load_tokenizer(preset['vocab'], preset['merges'])
-        _MODEL_CACHE[cache_key] = (model, tokenizer, device)
-        return _MODEL_CACHE[cache_key]
+        inferred = None
+    else:
+        key_lower = 'finetune' if 'finetune' in str(kind).lower() else 'pretrain'
+        resolved_checkpoint = str(mapping.get(key_lower))
+        inferred = key_lower
 
-    # Determine the checkpoint path to use and include it in the cache key
-    key = kind
+    cache_key = f"checkpoint:{resolved_checkpoint}"
     with _LOCK:
-        if key in _MODEL_CACHE:
-            return _MODEL_CACHE[key]
-
-        preset = PRESETS['chat'] if kind == 'finetune' else PRESETS['wikipedia']
-        # try to find a more recent checkpoint in runs/ for this kind
-        resolved_checkpoint = find_latest_checkpoint(kind) or preset.get('checkpoint')
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        # use checkpoint path as part of the cache key so different checkpoints are cached separately
-        cache_key = f"{kind}:{resolved_checkpoint}"
         if cache_key in _MODEL_CACHE:
             return _MODEL_CACHE[cache_key]
 
-        if not resolved_checkpoint:
-            raise RuntimeError(f"no checkpoint found for model kind '{kind}' and no preset available")
+        if not Path(resolved_checkpoint).exists():
+            raise RuntimeError(f"checkpoint not found: {resolved_checkpoint}")
 
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # choose tokenizer preset based on logical kind or inferred from path
+        if inferred:
+            preset = PRESETS.get('chat') if inferred == 'finetune' else PRESETS.get('wikipedia')
+        else:
+            lc = str(resolved_checkpoint).lower()
+            if 'finetune' in lc:
+                preset = PRESETS.get('chat')
+            else:
+                preset = PRESETS.get('wikipedia')
         model = load_model(resolved_checkpoint, device)
         tokenizer = load_tokenizer(preset['vocab'], preset['merges'])
         _MODEL_CACHE[cache_key] = (model, tokenizer, device)
@@ -95,34 +76,32 @@ def get_model_and_tokenizer(kind: str):
 
 
 def list_available_models():
-    """Scan `runs/*/checkpoints/*.pt` and return the newest checkpoint for each run folder."""
-    runs_dir = Path('runs')
+    """Scan `models/` for subfolders with `ckpt_final.pt` and return them.
+
+    Also include preset fallbacks if any expected models are missing.
+    """
+    models_dir = Path('models')
     results = []
-    if not runs_dir.exists():
+    if not models_dir.exists():
+        # fallback to presets
+        if 'chat' in PRESETS:
+            results.append({'id': 'finetune', 'label': 'finetune (preset)', 'checkpoint': PRESETS['chat'].get('checkpoint')})
+        if 'wikipedia' in PRESETS:
+            results.append({'id': 'pretrain', 'label': 'pretrain (preset)', 'checkpoint': PRESETS['wikipedia'].get('checkpoint')})
         return results
 
-    # consider each immediate child under runs/ as a model-run folder
-    for run_sub in sorted([p for p in runs_dir.iterdir() if p.is_dir()]):
-        chk_dir = run_sub / 'checkpoints'
-        if not chk_dir.exists():
-            continue
-        cands = list(chk_dir.glob('*.pt'))
-        if not cands:
-            continue
-        latest = max(cands, key=lambda x: x.stat().st_mtime)
-        results.append({
-            'id': run_sub.name,
-            'label': f"{run_sub.name} ({latest.name})",
-            'checkpoint': str(latest),
-        })
+    for sub in sorted([p for p in models_dir.iterdir() if p.is_dir()]):
+        ck = sub / 'ckpt_final.pt'
+        if ck.exists():
+            results.append({'id': sub.name, 'label': f"{sub.name}", 'checkpoint': str(ck)})
 
-    # also include presets if not already present
-    for k, v in PRESETS.items():
-        # use run-like id for preset
-        rid = k
-        if any(r['id'] == rid for r in results):
-            continue
-        results.append({'id': rid, 'label': f"preset: {rid}", 'checkpoint': v.get('checkpoint')})
+    # ensure logical finetune/pretrain entries exist (fallback to presets if not)
+    has_finetune = any('finetune' in r['id'].lower() for r in results)
+    has_pretrain = any('pretrain' in r['id'].lower() for r in results)
+    if not has_finetune and 'chat' in PRESETS:
+        results.append({'id': 'finetune', 'label': 'finetune (preset)', 'checkpoint': PRESETS['chat'].get('checkpoint')})
+    if not has_pretrain and 'wikipedia' in PRESETS:
+        results.append({'id': 'pretrain', 'label': 'pretrain (preset)', 'checkpoint': PRESETS['wikipedia'].get('checkpoint')})
 
     return results
 
@@ -132,6 +111,9 @@ async def api_models():
     models = list_available_models()
     return JSONResponse({'models': models})
 
+@app.get('/favicon.ico')
+async def favicon():
+    return Response(status_code=204)  # No content
 
 @app.get('/')
 async def index():
