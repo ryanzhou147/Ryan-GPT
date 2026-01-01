@@ -18,16 +18,19 @@
       <div class="app">
         <header class="topbar">
           <h1>RyanGPT</h1>
-          <div class="controls">
-            <label class="switch-label">Model
-              <select v-model="selected_model">
-                <option v-for="m in models" :key="m.id" :value="m.checkpoint">{{ m.label }}</option>
-              </select>
-            </label>
-            <label class="switch-label">Temp
-              <input v-model.number="temperature" type="number" step="0.1" min="0" max="2" style="width:50px" />
-            </label>
-          </div>
+            <div class="controls">
+              <label class="switch-label">Model
+                <select v-model="selected_model">
+                  <option v-for="m in models" :key="m.id" :value="m.checkpoint">{{ m.label }}</option>
+                </select>
+              </label>
+              <label class="switch-label">Temp
+                <input v-model.number="temperature" type="number" step="0.1" min="0" max="2" style="width:50px" />
+              </label>
+              <label class="switch-label">Min Tokens
+                <input v-model.number="min_tokens" type="number" step="5" min="0" max="100" style="width:50px" />
+              </label>
+            </div>
         </header>
 
         <main class="chat-container">
@@ -58,8 +61,8 @@
         const selected_model = ref('');
         const prompt = ref('');
         const messages = reactive([]);
-        const max_tokens = ref(128);
         const temperature = ref(0.5);
+        const min_tokens = ref(10);
 
         function append(role, text){
           messages.push({role, text});
@@ -84,7 +87,7 @@
               body: JSON.stringify({
                 model: selected_model.value,
                 prompt: text,
-                max_tokens: max_tokens.value,
+                min_tokens: min_tokens.value,
                 temperature: temperature.value,
               })
             });
@@ -105,8 +108,25 @@
             const r = await fetch('/api/models');
             const j = await r.json();
             if(j.models && j.models.length){
-              models.value = j.models;
-              selected_model.value = j.models[0].checkpoint || '';
+              // prefer specific run folders; fall back to presets
+              const findById = (id) => j.models.find(m => m.id === id);
+
+              const finetuneRun = findById('finetune_chinchilla_style_deep');
+              const pretrainRun = findById('pretrain_chinchilla_style_deep');
+
+              const chatPreset = findById('chat');
+              const wikiPreset = findById('wikipedia');
+
+              const finetuneOption = finetuneRun ?
+                { id: 'finetune', label: 'finetune (chat)', checkpoint: finetuneRun.checkpoint } :
+                { id: 'finetune', label: 'finetune (chat)', checkpoint: (chatPreset && chatPreset.checkpoint) || '' };
+
+              const pretrainOption = pretrainRun ?
+                { id: 'pretrain', label: 'pretrain (wikipedia)', checkpoint: pretrainRun.checkpoint } :
+                { id: 'pretrain', label: 'pretrain (wikipedia)', checkpoint: (wikiPreset && wikiPreset.checkpoint) || '' };
+
+              models.value = [finetuneOption, pretrainOption];
+              selected_model.value = models.value[0].checkpoint || '';
             }
           }catch(e){
             console.warn('Could not fetch models', e);
@@ -123,8 +143,7 @@
           });
         });
 
-        return { models, selected_model, prompt, messages, max_tokens, temperature, send };
-      }
+        return { models, selected_model, prompt, messages, min_tokens, temperature, send };      }
     };
 
     createApp(App).mount('#app');
