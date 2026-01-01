@@ -143,9 +143,9 @@ async def api_chat(req: Request):
     model_type = body.get('model', 'finetune')
     prompt = (body.get('prompt') or '').strip()
     try:
-        min_tokens = int(body.get('min_tokens', 5))
+        min_tokens = int(body.get('min_tokens', 10))
     except Exception:
-        min_tokens = 5
+        min_tokens = 10
     try:
         temperature = float(body.get('temperature', 0.5))
     except Exception:
@@ -154,37 +154,37 @@ async def api_chat(req: Request):
     if not prompt:
         raise HTTPException(status_code=400, detail='empty prompt')
 
-    # enforce bounds: temperature in (0,1) exclusive, min_tokens in [10,140]
+    # Determine chat mode first
+    chat_mode = 'finetune' in model_type.lower()
+    
+    # Set defaults and bounds based on model type
+    if chat_mode:
+        max_tokens = 50
+        default_min = 5
+        min_bound = 5
+    else:
+        max_tokens = 75
+        default_min = 10
+        min_bound = 10
+    
+    # Apply min_tokens bounds
+    if min_tokens < min_bound:
+        min_tokens = min_bound
+    if min_tokens > max_tokens - 10:  # Leave room for generation
+        min_tokens = max_tokens - 10
+
+    # Temperature bounds
     if temperature <= 0.0:
         temperature = 0.01
     if temperature >= 1.0:
         temperature = 0.99
-
-    # round temperature to 2 decimal places server-side
-    try:
-        temperature = float(round(float(temperature), 2))
-    except Exception:
-        temperature = 0.5
-
-    if min_tokens < 10:
-        min_tokens = 10
-    if min_tokens > 140:
-        min_tokens = 140
-    # ensure min_tokens is integer and keep it within 3 digits
-    try:
-        min_tokens = int(min_tokens)
-    except Exception:
-        min_tokens = 5
-    if min_tokens > 140:
-        min_tokens = 140
-
-    chat_mode = 'finetune' in model_type.lower()
+    temperature = round(temperature, 2)
 
     try:
         model, tokenizer, device = get_model_and_tokenizer(model_type)
         reply = generate_response(
             model, tokenizer, prompt,
-            max_tokens=150,
+            max_tokens=max_tokens,
             min_tokens=min_tokens,
             temperature=temperature,
             device=device,
