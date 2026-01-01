@@ -154,6 +154,7 @@ def generate_text(
     
     text = tokenizer.decode(generated_ids.tolist())
     return text
+
 def generate_response(
     model,
     tokenizer,
@@ -161,7 +162,7 @@ def generate_response(
     max_tokens: int = 150,
     temperature: float = 0.6,
     top_p: float = 0.9,
-    min_tokens: int = 10,
+    min_tokens: int = 5,
     device: str = 'cuda',
     chat_mode: bool = True,
 ) -> str:
@@ -172,65 +173,28 @@ def generate_response(
     else:
         prompt = user_input
     
-    # Get special token IDs
+    prompt_ids = torch.tensor(tokenizer.encode(prompt), dtype=torch.long, device=device)
     eos_id = tokenizer.encode('<|endoftext|>')[0]
     user_id = tokenizer.encode('<|user|>')[0]
     
-    prompt_ids = torch.tensor(tokenizer.encode(prompt), dtype=torch.long, device=device)
+    # Use decode() with min_new_tokens and ban <|user|> token
+    generated_ids = decode(
+        model, prompt_ids,
+        max_new_tokens=max_tokens,
+        context_length=512,
+        eos_token_id=eos_id,
+        temperature=temperature,
+        top_p=top_p,
+        banned_token_ids=[user_id],  # Prevent generating <|user|>
+        min_new_tokens=min_tokens,
+    )
     
-    generated = []
-    input_ids = prompt_ids.clone()
+    text = tokenizer.decode(generated_ids.tolist())
     
-    with torch.no_grad():
-        for i in range(max_tokens):
-            logits = model(input_ids.unsqueeze(0))[:, -1, :]
-            
-            # Ban EOS and <|user|> for first min_tokens
-            if i < min_tokens:
-                logits[0, eos_id] = float('-inf')
-                logits[0, user_id] = float('-inf')
-            
-            # Apply temperature
-            logits = logits / temperature
-            
-            # Apply top-p sampling
-            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-            cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-            sorted_indices_to_remove = cumulative_probs > top_p
-            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-            sorted_indices_to_remove[..., 0] = 0
-            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-            logits[indices_to_remove] = float('-inf')
-            
-            # Sample next token
-            probs = torch.softmax(logits, dim=-1)
-            next_id = torch.multinomial(probs, 1).item()
-            
-            # Stop if EOS or <|user|> (after min_tokens)
-            if next_id == eos_id or next_id == user_id:
-                break
-            
-            generated.append(next_id)
-            
-            # Stop on repetition (same token 5+ times in a row)
-            if len(generated) >= 5 and len(set(generated[-5:])) == 1:
-                generated = generated[:-4]  # Remove repeated tokens
-                break
-            
-            input_ids = torch.cat([input_ids, torch.tensor([next_id], device=device)])
-            
-            # Truncate context if too long
-            if len(input_ids) > 512:
-                input_ids = input_ids[-512:]
-    
-    response_text = tokenizer.decode(generated)
-    
-    # Clean up garbage
-    response_text = response_text.replace('�', '')
-    response_text = re.sub(r'\.{3,}', '.', response_text)  # "....." -> "."
-    response_text = re.sub(r'(.)\1{4,}', r'\1', response_text)  # "aaaaa" -> "a"
-    
-    return clean_text(response_text)
+    if chat_mode:
+        return extract_response(text)
+    else:
+        return clean_text(text)
 
 def main():
     parser = argparse.ArgumentParser(description="Generate text from GPT")
@@ -265,7 +229,6 @@ def main():
         text = clean_text(text)
     
     print(text)
-
 
 if __name__ == "__main__":
     main()
