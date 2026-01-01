@@ -154,7 +154,6 @@ def generate_text(
     
     text = tokenizer.decode(generated_ids.tolist())
     return text
-
 def generate_response(
     model,
     tokenizer,
@@ -212,6 +211,12 @@ def generate_response(
                 break
             
             generated.append(next_id)
+            
+            # Stop on repetition (same token 5+ times in a row)
+            if len(generated) >= 5 and len(set(generated[-5:])) == 1:
+                generated = generated[:-4]  # Remove repeated tokens
+                break
+            
             input_ids = torch.cat([input_ids, torch.tensor([next_id], device=device)])
             
             # Truncate context if too long
@@ -219,6 +224,12 @@ def generate_response(
                 input_ids = input_ids[-512:]
     
     response_text = tokenizer.decode(generated)
+    
+    # Clean up garbage
+    response_text = response_text.replace('�', '')
+    response_text = re.sub(r'\.{3,}', '.', response_text)  # "....." -> "."
+    response_text = re.sub(r'(.)\1{4,}', r'\1', response_text)  # "aaaaa" -> "a"
+    
     return clean_text(response_text)
 
 def main():
