@@ -62,7 +62,18 @@ python webapp/app.py --host 127.0.0.1 --port 8080
 | Tokens/step | 32,768 | 32,768 |
 | LR (cosine) | 6e-4 → 6e-5 | 3e-5 → 3e-6 |
 | Warmup | 2,000 | 50 |
-| Final loss | 3.44 | ~2.8 |
+
+## Training Results
+
+| Model | Train Loss | Val Loss |
+|-------|------------|----------|
+| Pretrain | 3.44 | — |
+| Finetune | 2.31 | 2.49 |
+
+<p align="center">
+  <img src="assets/pretrain_loss.svg" width="45%" alt="Pretrain Loss">
+  <img src="assets/finetune_loss.svg" width="45%" alt="Finetune Loss">
+</p>
 
 ## Memory
 
