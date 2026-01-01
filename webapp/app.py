@@ -154,6 +154,30 @@ async def api_chat(req: Request):
     if not prompt:
         raise HTTPException(status_code=400, detail='empty prompt')
 
+    # enforce bounds: temperature in (0,1) exclusive, min_tokens in [10,140]
+    if temperature <= 0.0:
+        temperature = 0.01
+    if temperature >= 1.0:
+        temperature = 0.99
+
+    # round temperature to 2 decimal places server-side
+    try:
+        temperature = float(round(float(temperature), 2))
+    except Exception:
+        temperature = 0.5
+
+    if min_tokens < 10:
+        min_tokens = 10
+    if min_tokens > 140:
+        min_tokens = 140
+    # ensure min_tokens is integer and keep it within 3 digits
+    try:
+        min_tokens = int(min_tokens)
+    except Exception:
+        min_tokens = 10
+    if min_tokens > 999:
+        min_tokens = 999
+
     chat_mode = 'finetune' in model_type.lower()
 
     try:
