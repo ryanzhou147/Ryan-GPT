@@ -1,18 +1,15 @@
 # RyanGPT
 
 TL;DR
-
-- Trained in 12 hours on a single GPU (NVIDIA GeForce RTX 3060, 12 GB) with AMD Ryzen 5 7600 and 32 GB RAM. This is just a small proof-of-concept model.
+- Proof of concept model. Trained in 12 hours on a single GPU (NVIDIA GeForce RTX 3060, 12 GB) with AMD Ryzen 5 7600 and 32 GB RAM.
 
 Two models: Pretrain vs Fine-tune
-
 - Pretrain: a base language model trained on large general corpora (Wikipedia + C4 here).
-- Fine-tune: a short, task-specific adaptation of the pretrain checkpoint that specializes behavior for dialogue.
+- Fine-tune: a short, task-specific adaptation of the pretrain checkpoint that specializes behavior for dialogue (Dailydialog).
 
 Data sizes used for training
 - Wikipedia: 182 MB
 - C4: 165 MB
-- Wikipedia + C4: 347 MB
 - DailyDialog: 7.4 MB
 
 1) Run & use
