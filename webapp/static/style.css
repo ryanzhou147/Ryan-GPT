@@ -38,3 +38,27 @@ button#send svg{color:#fff}
 input[type=number]{background:#fff;color:inherit;border:1px solid #e6edf3;padding:8px;border-radius:6px}
 select{background:#fff;color:inherit;border:1px solid #e6edf3;padding:6px;border-radius:6px}
 
+/* Hide number input spinners on Chrome/Safari/Edge (WebKit) and Firefox */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{
+	-webkit-appearance: none !important;
+	appearance: none !important;
+	display: none !important;
+	margin: 0 !important;
+}
+
+/* Ensure no spinner in Chromium: target inner and outer as well as calendar indicator */
+input[type=number]::-webkit-calendar-picker-indicator,
+input[type=number]::-webkit-clear-button,
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{
+	display: none !important;
+	-webkit-appearance: none !important;
+}
+
+input[type=number]{
+	-moz-appearance: textfield !important;
+	-webkit-appearance: none !important;
+	appearance: textfield !important;
+}
+
