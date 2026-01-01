@@ -137,7 +137,6 @@ async def api_models():
 async def index():
     return FileResponse('webapp/templates/index.html')
 
-
 @app.post('/api/chat')
 async def api_chat(req: Request):
     body = await req.json()
@@ -155,12 +154,16 @@ async def api_chat(req: Request):
     if not prompt:
         raise HTTPException(status_code=400, detail='empty prompt')
 
-    kind = 'finetune' if model_type == 'finetune' else 'pretrain'
+    chat_mode = 'finetune' in model_type.lower()
+
     try:
         model, tokenizer, device = get_model_and_tokenizer(model_type)
         reply = generate_response(
             model, tokenizer, prompt,
-            max_tokens=max_tokens, temperature=temperature, device=device,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            device=device,
+            chat_mode=chat_mode,
         )
         return JSONResponse({'reply': reply})
     except Exception as e:
