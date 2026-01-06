@@ -24,10 +24,6 @@ from ryan_gpt_systems.ddp_flat import DDPIndividualParameters
 from ryan_gpt_systems.optimizer_state_sharding import ShardedOptimizer
 
 
-# =============================================================================
-# Environment Detection
-# =============================================================================
-
 def is_tpu_available() -> bool:
     """Check if TPU is available via torch_xla."""
     try:
@@ -61,10 +57,6 @@ def is_main_process() -> bool:
     """Check if this is the main process (rank 0)."""
     return get_rank() == 0
 
-
-# =============================================================================
-# Initialization
-# =============================================================================
 
 def setup_distributed(
     backend: str = "nccl",
@@ -159,10 +151,6 @@ def cleanup_distributed():
     if dist.is_initialized():
         dist.destroy_process_group()
 
-
-# =============================================================================
-# Model Wrapping Strategies
-# =============================================================================
 
 class DistributedStrategy:
     """Base class for distributed training strategies."""
