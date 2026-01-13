@@ -116,6 +116,60 @@ cp runs/finetune/checkpoints/ckpt_final.pt models/finetune/ckpt_final.pt
 python webapp/app.py
 ```
 
-## Acknowledgments
+# Distributed Training Primitives
 
+This repository also contains the implementation code for the **[Distributed Training series](https://rzhou.me/thoughts/distributed-training)** on my blog.
+
+The goal is not to replace PyTorch DDP, but to understand *how* they work by building them component by component and validating them on a single consumer GPU (RTX 3060).
+
+### Supported Strategies
+
+| Strategy | Description | Blog Post |
+|----------|-------------|-----------|
+| `single` | Standard single-process training | [Part 1](https://ryanzhou.com/thoughts/distributed-training1) |
+| `ddp_flat` | Naive all-reduce per parameter | [Part 2](https://ryanzhou.com/thoughts/distributed-training2) |
+| `ddp_bucketed` | Coalesced gradient buckets | [Part 3](https://ryanzhou.com/thoughts/distributed-training3) |
+| `zero` | Optimizer state sharding + DDP | [Part 3](https://ryanzhou.com/thoughts/distributed-training3) |
+| `tensor_parallel` | Column/Row parallel layers | [Part 4](https://ryanzhou.com/thoughts/distributed-training4) |
+
+### Running the Distributed Code
+
+The codebase supports switching between different parallelism strategies via the command line.
+
+**Note:** If you run `torchrun` on a machine with fewer GPUs than the requested `nproc_per_node`, the code automatically falls back to **Simulation Mode** (using `gloo` backend on a single device) to verify logic correctness.
+
+#### 1. Distributed Data Parallelism (DDP)
+Spin up 4 processes to train a model using data parallelism. 
+
+```bash
+# Standard PyTorch DDP
+torchrun --nproc_per_node=4 train.py --strategy ddp
+
+# Custom Bucketed Implementation (from Part 3)
+torchrun --nproc_per_node=4 train.py --strategy ddp_bucketed
+```
+
+#### 2. Optimizer Sharding (ZeRO)
+Train using optimizer state sharding to reduce memory usage:
+
+```bash
+torchrun --nproc_per_node=4 train.py --strategy zero
+```
+
+#### 3. Tensor Parallelism
+Train with layer-wise model partitioning:
+
+```bash
+torchrun --nproc_per_node=4 train.py --strategy tensor_parallel
+```
+
+### Benchmarking
+To validate correctness and compare memory usage across strategies:
+
+```bash
+torchrun --nproc_per_node=4 benchmark_strategies.py --quick
+```
+This outputs **Correctness Checks** (weight sync verification), **Peak VRAM usage**, and **Throughput**.
+
+## Acknowledgments
 Project inspired by Stanford's [CS336: Language Modeling from Scratch](https://stanford-cs336.github.io/spring2024/). Implementation, training pipeline, and model are my own.
