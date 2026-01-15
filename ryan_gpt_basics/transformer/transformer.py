@@ -4,7 +4,6 @@ from ryan_gpt_basics.transformer.transformer_block import TransformerBlock
 from ryan_gpt_basics.transformer.linear import Linear
 from ryan_gpt_basics.transformer.embedding import Embedding
 from ryan_gpt_basics.transformer.rmsnorm import RMSNorm
-from einops import rearrange, einsum
 
 class TransformerLM(nn.Module):
 
@@ -16,10 +15,7 @@ class TransformerLM(nn.Module):
         self.vocab_size = vocab_size
         self.context_length = context_length
         self.num_layers = num_layers
-        
-        # Use context_length as max_seq_len if not provided
-        if max_seq_len is None:
-            max_seq_len = context_length
+        max_seq_len = max_seq_len or context_length
 
         self.token_embeddings = Embedding(vocab_size, d_model)
         self.transformer_blocks = nn.ModuleList([
@@ -30,23 +26,11 @@ class TransformerLM(nn.Module):
         self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
 
     def forward(self, in_indices: torch.Tensor) -> torch.Tensor:
-        """
-        Apply the Transformer language model to the input indices.
-        
-        in_indices: torch.Tensor Input tensor of shape (batch_size, sequence_length)
-        """
         batch_size, seq_len = in_indices.shape
-        assert seq_len <= self.context_length, f"Input sequence length {seq_len} exceeds context_length {self.context_length}"
+        assert seq_len <= self.context_length
 
-        # Get token positions
-        token_positions = torch.arange(seq_len, device=in_indices.device).unsqueeze(0).expand(batch_size, -1) # Shape: (batch_size, seq_len)
-        # Embed input indices
-        x = self.token_embeddings(in_indices) # Shape: (batch_size, seq_len, d_model)
-        # Apply transformer blocks
+        token_positions = torch.arange(seq_len, device=in_indices.device).unsqueeze(0).expand(batch_size, -1)
+        x = self.token_embeddings(in_indices)
         for block in self.transformer_blocks:
             x = block(x, token_positions)
-        # Apply final RMSNorm
-        x = self.rmsnorm_final(x)
-        # Project to vocabulary logits
-        logits = self.lm_head(x) # Shape: (batch_size, seq_len, vocab_size)
-        return logits
+        return self.lm_head(self.rmsnorm_final(x))
