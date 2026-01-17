@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.init as init
 from ryan_gpt_basics.transformer.linear import Linear
 
 
@@ -20,15 +19,9 @@ class SwiGLU(nn.Module):
         self.w3 = Linear(d_model, d_ff, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        
-        assert x.shape[-1] == self.d_model, f"Expected input last dimension {self.d_model}, got {x.shape[-1]}"
-
-        w1_out = self.w1(x) # Dimensions: (batch_size, seq_len, d_ff)
-        silu_out = w1_out * torch.sigmoid(w1_out) 
-
-        w3_out = self.w3(x) # Dimensions: (batch_size, seq_len, d_ff)
-        gated = silu_out * w3_out
-
-        return self.w2(gated)
+        assert x.shape[-1] == self.d_model
+        gate = self.w1(x)
+        gate = gate * torch.sigmoid(gate)  # SiLU
+        return self.w2(gate * self.w3(x))
 
 
