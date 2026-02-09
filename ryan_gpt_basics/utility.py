@@ -2,8 +2,6 @@ import torch
 import math
 import os
 import typing
-import numpy as np
-from collections.abc import Iterable 
 from einops import einsum
 
 def softmax(x: torch.Tensor, dim: int) -> torch.Tensor:
@@ -82,32 +80,6 @@ def learning_rate_schedule(current_iteration: int, max_learning_rate: float, min
         lr = minimum_learning_rate
     
     return lr
-
-def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float, eps: float = 1e-6) -> None:
-    total_norm = 0.0
-    for parameter in parameters:
-        if parameter.grad is not None:
-            param_norm = torch.linalg.vector_norm(parameter.grad.data, ord=2)
-            total_norm += param_norm.item() ** 2
-    
-    total_norm = total_norm ** 0.5
-
-    if total_norm >= max_l2_norm:
-        scale = max_l2_norm / (total_norm + eps)
-        for parameter in parameters:
-            if parameter.grad is not None:
-                parameter.grad.data.mul_(scale)
-
-
-def data_loading(x: np.ndarray, batch_size: int, context_length: int, device: str) -> tuple[torch.Tensor, torch.Tensor]:
-    n = len(x)
-    starts = np.random.randint(0, n - context_length, size=batch_size)
-    offsets = np.arange(context_length + 1)
-    
-    # Single gather from memmap, then convert + transfer in one call
-    seq = torch.tensor(x[starts[:, None] + offsets], dtype=torch.long, device=device)
-    
-    return seq[:, :-1], seq[:, 1:]
 
 def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, 
                     iteration: int, out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
